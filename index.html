@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>급식 먹고 도망쳐!</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#10182c;color:#fff;font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:14px}
+.wrap{width:min(900px,100%)}header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+h1{font-size:clamp(22px,4vw,34px);margin:0;color:#ffe45c;text-shadow:2px 3px #e45c35}
+.stats{display:flex;gap:8px}.pill{background:#263553;border:1px solid #455777;border-radius:12px;padding:8px 12px;font-weight:800}
+.gamebox{position:relative;border:3px solid #52698d;border-radius:18px;overflow:hidden;background:#79d7ff;box-shadow:0 14px 45px #0006}
+canvas{display:block;width:100%;height:auto;touch-action:none}
+.overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#0b1734b8;padding:18px;text-align:center}
+.panel{max-width:430px;background:#172541ed;border:2px solid #6b83a9;border-radius:22px;padding:22px;box-shadow:0 10px 30px #0005}
+.panel h2{font-size:clamp(26px,5vw,42px);margin:0 0 8px;color:#ffe45c}.panel p{line-height:1.6;margin:8px 0 18px}
+button{font:inherit;font-weight:900;border:0;border-radius:13px;padding:12px 18px;background:#ffe45c;color:#332b20;cursor:pointer;box-shadow:0 4px 0 #c98d2c}
+button:active{transform:translateY(2px);box-shadow:0 2px 0 #c98d2c}
+.hint{text-align:center;color:#c6d5f1;font-size:13px;margin:10px 0}
+.mobile{display:none;justify-content:center;gap:10px;margin-top:8px}.mobile button{min-width:62px}
+@media(max-width:620px){.mobile{display:flex}.hint{font-size:12px}}
+</style>
+</head>
+<body><main class="wrap">
+<header><h1>🍱 급식 먹고 도망쳐!</h1><div class="stats"><div class="pill">⭐ 점수 <span id="score">0</span></div><div class="pill">⏱️ <span id="time">30</span>초</div><div class="pill">🏆 최고 <span id="best">0</span></div></div></header>
+<div class="gamebox"><canvas id="game" width="800" height="480" aria-label="급식 피하기 게임"></canvas>
+<div class="overlay" id="overlay"><div class="panel"><h2 id="overTitle">급식이 쫓아온다! 😱</h2><p id="overText">날아오는 급식 공을 피하고 코인을 모아라!<br>30초 동안 버티면 승리!</p><button id="start">시작하기 ▶</button></div></div>
+</div>
+<div class="mobile"><button data-dir="left">⬅️</button><button data-dir="up">⬆️ 점프</button><button data-dir="down">⬇️</button><button data-dir="right">➡️</button></div>
+<div class="hint">이동: WASD / 방향키 · 점프: 스페이스 · 코인을 먹고 급식 공을 피해! (모바일은 버튼 사용)</div>
+</main>
+<script>
+(()=> {
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const $=id=>document.getElementById(id);
+let player, hazards, coins, particles, score, timeLeft, running=false, last=0, spawn=0, coinSpawn=0, keys={}, best=Number(localStorage.getItem('mealEscapeBest')||0);
+$('best').textContent=best;
+function reset(){player={x:120,y:355,r:18,vy:0,ground:true,inv:0};hazards=[];coins=[];particles=[];score=0;timeLeft=30;spawn=0;coinSpawn=0;$('score').textContent=0;$('time').textContent=30}
+function start(){reset();running=true;$('overlay').style.display='none';last=performance.now();requestAnimationFrame(loop)}
+$('start').addEventListener('click',start);
+function end(win){running=false;$('overlay').style.display='flex';$('overTitle').textContent=win?'🎉 생존 성공!':'💥 급식에 잡혔다!';$('overText').innerHTML=(win?'너는 급식 추격전의 전설이다!':'괜찮아, 다음엔 더 오래 버텨 보자!')+'<br>최종 점수: <b>'+score+'</b><br>다시 도전해서 기록을 깨 봐!';$('start').textContent='다시 하기 ↻'}
+function jump(){if(running&&player.ground){player.vy=-490;player.ground=false}}
+window.addEventListener('keydown',e=>{if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();keys[e.key.toLowerCase()]=true;if(e.key===' '||e.key==='ArrowUp'||e.key.toLowerCase()==='w')jump();if(!running&&e.key==='Enter')start()});
+window.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+document.querySelectorAll('[data-dir]').forEach(b=>{const dir=b.dataset.dir;const down=e=>{e.preventDefault();keys[dir]=true;if(dir==='up')jump()};const up=e=>{e.preventDefault();keys[dir]=false};b.addEventListener('pointerdown',down);b.addEventListener('pointerup',up);b.addEventListener('pointerleave',up);b.addEventListener('pointercancel',up)});
+function circle(x,y,r,color){ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill()}
+function draw(){
+ const w=800,h=480;
+ let sky=ctx.createLinearGradient(0,0,0,h);sky.addColorStop(0,'#61c8ff');sky.addColorStop(1,'#d4f6ff');ctx.fillStyle=sky;ctx.fillRect(0,0,w,h);
+ // clouds and school
+ ctx.fillStyle='#fff';for(let i=0;i<5;i++){let x=((i*190+30-(performance.now()*0.012)%950)+950)%950-80;circle(x,82+(i%2)*24,23,'#fff');circle(x+25,72+(i%2)*24,30,'#fff');circle(x+53,84+(i%2)*24,20,'#fff')}
+ ctx.fillStyle='#f6dfaa';ctx.fillRect(515,130,250,180);ctx.fillStyle='#edb87b';ctx.fillRect(495,118,290,25);ctx.fillStyle='#fff4cf';ctx.fillRect(585,91,100,40);ctx.fillStyle='#263553';ctx.font='bold 20px sans-serif';ctx.textAlign='center';ctx.fillText('우리 학교',635,117);
+ for(let x=535;x<750;x+=48){ctx.fillStyle='#73c9ff';ctx.fillRect(x,165,28,35);ctx.fillRect(x,220,28,35)}
+ // ground
+ ctx.fillStyle='#7cc76b';ctx.fillRect(0,300,w,50);ctx.fillStyle='#e88966';ctx.fillRect(0,350,w,130);ctx.fillStyle='#f8dca4';ctx.fillRect(0,412,w,7);ctx.fillRect(0,465,w,5);
+ // moving lane dashes
+ ctx.fillStyle='#fff1c9';for(let x=-(performance.now()*.35%140);x<w;x+=140)ctx.fillRect(x,445,65,5);
+ // player shadow + student
+ circle(player.x,379,21,'#0002');
+ ctx.fillStyle='#253c68';ctx.fillRect(player.x-14,player.y+10,12,30);ctx.fillRect(player.x+3,player.y+10,12,30);
+ ctx.fillStyle='#fff';ctx.fillRect(player.x-17,player.y-7,34,28);ctx.fillStyle='#ffda8b';circle(player.x,player.y-18,16,'#ffcf9d');
+ ctx.fillStyle='#3b2b2a';ctx.beginPath();ctx.arc(player.x,player.y-22,16,Math.PI,Math.PI*2);ctx.fill();ctx.fillRect(player.x-15,player.y-25,8,10);
+ ctx.fillStyle='#172541';circle(player.x-5,player.y-18,2,'#172541');circle(player.x+6,player.y-18,2,'#172541');ctx.strokeStyle='#a34a42';ctx.lineWidth=2;ctx.beginPath();ctx.arc(player.x+1,player.y-11,5,0,Math.PI);ctx.stroke();
+ // hazards: angry food balls
+ hazards.forEach(o=>{circle(o.x,o.y,o.r,'#d94d3f');circle(o.x-5,o.y-4,3,'#fff');circle(o.x+6,o.y-4,3,'#fff');ctx.strokeStyle='#5e201e';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(o.x-7,o.y-10);ctx.lineTo(o.x-2,o.y-8);ctx.moveTo(o.x+3,o.y-8);ctx.lineTo(o.x+9,o.y-10);ctx.stroke();ctx.fillStyle='#fff';ctx.fillRect(o.x-8,o.y+5,16,4);ctx.fillStyle='#d94d3f';ctx.fillRect(o.x-5,o.y+5,10,4)});
+ // coins
+ coins.forEach(c=>{circle(c.x,c.y,11,'#ffcb37');circle(c.x,c.y,7,'#fff18c');ctx.fillStyle='#b97819';ctx.font='bold 13px sans-serif';ctx.textAlign='center';ctx.fillText('₩',c.x,c.y+5)});
+ particles.forEach(p=>{ctx.globalAlpha=Math.max(0,p.life/0.5);circle(p.x,p.y,p.r,p.color);ctx.globalAlpha=1});
+ ctx.fillStyle='#17314e';ctx.font='bold 16px sans-serif';ctx.textAlign='left';ctx.fillText('급식 공을 피하고 코인을 모아!',18,28);
+}
+function loop(now){if(!running)return;let dt=Math.min((now-last)/1000,.035);last=now;timeLeft-=dt;if(timeLeft<=0){timeLeft=0;$('time').textContent='0';score+=100;if(score>best){best=score;localStorage.setItem('mealEscapeBest',best);$('best').textContent=best}draw();end(true);return}
+ let speed=235;
+ if(keys.arrowleft||keys.a||keys.left)player.x-=speed*dt;
+ if(keys.arrowright||keys.d||keys.right)player.x+=speed*dt;
+ if((keys.arrowup||keys.w||keys.up)&&player.ground)jump();
+ if(keys.arrowdown||keys.s||keys.down)player.y=Math.min(365,player.y+speed*dt*.6);
+ player.x=Math.max(25,Math.min(775,player.x));player.vy+=1050*dt;player.y+=player.vy*dt;
+ if(player.y>=355){player.y=355;player.vy=0;player.ground=true}
+ if(player.inv>0)player.inv-=dt;
+ spawn-=dt;if(spawn<=0){hazards.push({x:835,y:320+Math.random()*85,r:16+Math.random()*9,v:260+Math.random()*110+score*.2});spawn=Math.max(.38,1.0-score*.002)+Math.random()*.25}
+ coinSpawn-=dt;if(coinSpawn<=0){coins.push({x:835,y:270+Math.random()*90,r:11,v:200+score*.15});coinSpawn=1.1+Math.random()*1.1}
+ hazards.forEach(o=>o.x-=o.v*dt);hazards=hazards.filter(o=>o.x>-40);
+ coins.forEach(o=>o.x-=o.v*dt);coins=coins.filter(o=>o.x>-30);
+ for(const o of hazards){if(Math.hypot(player.x-o.x,player.y-4-o.y)<player.r+o.r-5){if(player.inv<=0){end(false);draw();return}}}
+ coins=coins.filter(o=>{if(Math.hypot(player.x-o.x,player.y-5-o.y)<player.r+o.r){score+=10;$('score').textContent=score;for(let i=0;i<7;i++)particles.push({x:o.x,y:o.y,vx:(Math.random()-.5)*100,vy:(Math.random()-.5)*100,r:3+Math.random()*3,life:.5,color:'#ffe45c'});return false}return true});
+ particles.forEach(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt});particles=particles.filter(p=>p.life>0);
+ $('time').textContent=Math.ceil(timeLeft);draw();requestAnimationFrame(loop)}
+reset();draw();
+})();
+</script></body></html>
